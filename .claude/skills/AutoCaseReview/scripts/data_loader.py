@@ -21,11 +21,14 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 INPUTS_DIR = SKILL_ROOT / "inputs"
+TEMPLATES_DIR = INPUTS_DIR / "templates"
 REQUIREMENT_DATA_DIR = INPUTS_DIR / "requirement_data"
 OUTPUTS_DIR = SKILL_ROOT / "outputs"
 CONFIG_DIR = SKILL_ROOT / "config"
 FILENAME_TEMPLATES_PATH = CONFIG_DIR / "filename_templates.yaml"
 CONTENT_RULES_PATH = CONFIG_DIR / "content_rules.yaml"
+PROJECT_CONFIG_PATH = CONFIG_DIR / "project.yaml"
+TEMPLATE_CONFIG_PATH = CONFIG_DIR / "templates.yaml"
 
 # Canonical column names used everywhere downstream.
 CANONICAL_COLUMNS = [
@@ -38,9 +41,6 @@ CANONICAL_COLUMNS = [
     "后端开发",
     "创建者",
     "所属迭代",
-    "代办事项1@责任人",
-    "代办事项2@责任人",
-    "代办事项3@责任人",
 ]
 
 # Alternative spellings we accept from input files (best-effort normalisation).
@@ -64,11 +64,9 @@ COLUMN_ALIASES = {
 }
 
 # Columns that hold to-do items (each contains free text with @mentions).
-TODO_COLUMNS = [
-    "代办事项1@责任人",
-    "代办事项2@责任人",
-    "代办事项3@责任人",
-]
+# The input can contain any number of columns such as 代办事项1@责任人,
+# 代办事项2@责任人, ...; discover them dynamically instead of hard-coding a max.
+TODO_COLUMN_RE = re.compile(r"^代办事项(\d+)@责任人$")
 
 # Matches substrings like "@黄美玲" or "@Zhang San".
 # Names: 2-4 Chinese chars, or 1-30 ASCII letters/dots/hyphens/apostrophes
@@ -96,7 +94,19 @@ def _normalise_columns(df: pd.DataFrame) -> pd.DataFrame:
         # the full schema.  Critical missing fields are reported by caller.
         for col in missing:
             df[col] = ""
-    return df[CANONICAL_COLUMNS]
+    todo_columns = get_todo_columns(df)
+    return df[CANONICAL_COLUMNS + todo_columns]
+
+
+def get_todo_columns(df: pd.DataFrame) -> list[str]:
+    """Return all ``代办事项N@责任人`` columns sorted by N, then original order."""
+    indexed: list[tuple[int, int, str]] = []
+    for position, col in enumerate(df.columns):
+        name = str(col).strip()
+        match = TODO_COLUMN_RE.match(name)
+        if match:
+            indexed.append((int(match.group(1)), position, name))
+    return [name for _, _, name in sorted(indexed)]
 
 
 def _coerce_dates(value: object) -> str:
@@ -148,6 +158,7 @@ def load_requirement_file(path: Path) -> pd.DataFrame:
 def load_all_requirements(
     directory: Path | str | None = None,
     iteration: str | None = None,
+    data_file_keyword: str | None = None,
 ) -> pd.DataFrame:
     """Load and concatenate every xlsx in *directory*.
 
@@ -158,14 +169,21 @@ def load_all_requirements(
         with ``~$`` (Excel lock files) are skipped.
     iteration:
         Optional filter on ``所属迭代`` (exact match after strip).
+    data_file_keyword:
+        Optional case-insensitive filename filter.  For example, ``SP8`` loads
+        only requirement files whose names contain ``SP8``.
     """
     target_dir = Path(directory) if directory else REQUIREMENT_DATA_DIR
     if not target_dir.exists():
         raise FileNotFoundError(f"requirement_data directory not found: {target_dir}")
 
     files = sorted(p for p in target_dir.glob("*.xlsx") if not p.name.startswith("~$"))
+    if data_file_keyword:
+        keyword = data_file_keyword.strip().casefold()
+        files = [p for p in files if keyword in p.name.casefold()]
     if not files:
-        raise FileNotFoundError(f"no .xlsx files found under {target_dir}")
+        suffix = f" matching filename keyword {data_file_keyword!r}" if data_file_keyword else ""
+        raise FileNotFoundError(f"no .xlsx files found under {target_dir}{suffix}")
 
     frames = [load_requirement_file(p) for p in files]
     combined = pd.concat(frames, ignore_index=True)
@@ -253,7 +271,7 @@ def expand_todos(df: pd.DataFrame) -> list[dict]:
     items: list[dict] = []
     seq = 0
     for _, row in df.iterrows():
-        for col in TODO_COLUMNS:
+        for col in get_todo_columns(df):
             text = str(row.get(col, "")).strip()
             if not text:
                 continue
@@ -303,21 +321,6 @@ def iter_requirements(df: pd.DataFrame):
         yield rid, title, df.loc[[row.name]].copy()
 
 
-# ---------------------------------------------------------------------------
-# Filename templates (loaded once from config/filename_templates.yaml)
-# ---------------------------------------------------------------------------
-DEFAULT_FILENAME_TEMPLATES = {
-    "svn_excel": "LC-SOP-RC-007-R02_测试用例评审_{product}_{title}_{version}.xlsx",
-    "svn_word": "LC-SOP-RC-003-M01_会议纪要_{product}_测试用例评审_{title}_{version}.docx",
-    "email_word": "{product}_{iteration}_测试用例评审_邮件.docx",
-    "subdirs": {
-        "svn_excel": "测试用例评审",
-        "svn_word": "会议纪要",
-        "email_word": "邮件",
-    },
-}
-
-
 class _SafeFormatDict(dict):
     """Dict that returns "" for missing keys, so str.format_map never fails."""
 
@@ -325,38 +328,64 @@ class _SafeFormatDict(dict):
         return ""
 
 
-def load_filename_templates(path: Path | str | None = None) -> dict:
-    """Load filename templates (and output subdirs) from YAML.
+def _load_yaml_mapping(path: Path | str) -> dict:
+    """Load a required YAML mapping file.
 
-    Missing keys fall back to :data:`DEFAULT_FILENAME_TEMPLATES`.  The
-    ``subdirs`` value is a nested dict and is merged key-by-key rather than
-    stringified.
+    YAML files are the single source of truth for defaults.  Missing or invalid
+    config should fail early instead of silently falling back to stale Python
+    constants.
     """
-    target = Path(path) if path else FILENAME_TEMPLATES_PATH
-    result = dict(DEFAULT_FILENAME_TEMPLATES)
+    target = Path(path)
     if not target.exists():
-        return result
+        raise FileNotFoundError(f"config file not found: {target}")
     try:
         import yaml  # type: ignore
-    except ImportError:
-        return result
+    except ImportError as exc:
+        raise RuntimeError("pyyaml is required to load AutoCaseReview config") from exc
     try:
         with target.open(encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
-    except (OSError, yaml.YAMLError):
-        return result
-    for key in result:
-        if key not in data or data[key] is None:
-            continue
-        if isinstance(result[key], dict):
-            # Merge nested dict (e.g. subdirs) instead of replacing.
-            merged = dict(result[key])
-            if isinstance(data[key], dict):
-                merged.update(data[key])
-            result[key] = merged
-        else:
-            result[key] = str(data[key])
-    return result
+    except (OSError, yaml.YAMLError) as exc:
+        raise RuntimeError(f"failed to load config file: {target}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"config file must contain a mapping: {target}")
+    return data
+
+
+def load_project_config(path: Path | str | None = None) -> dict:
+    """Load project-level defaults such as product name."""
+    return _load_yaml_mapping(Path(path) if path else PROJECT_CONFIG_PATH)
+
+
+def get_default_product() -> str:
+    """Return the configured product name."""
+    return str(load_project_config()["product"])
+
+
+def load_template_names(path: Path | str | None = None) -> dict:
+    """Load template filenames from config/templates.yaml."""
+    data = _load_yaml_mapping(Path(path) if path else TEMPLATE_CONFIG_PATH)
+    required = ("svn_excel", "svn_word", "email_reference")
+    missing = [key for key in required if not data.get(key)]
+    if missing:
+        raise KeyError(f"missing template config keys: {', '.join(missing)}")
+    return data
+
+
+def load_filename_templates(path: Path | str | None = None) -> dict:
+    """Load filename templates (and output subdirs) from YAML.
+
+    The YAML file is the single source of truth for output naming.
+    """
+    target = Path(path) if path else FILENAME_TEMPLATES_PATH
+    data = _load_yaml_mapping(target)
+    required = ("svn_excel", "svn_word", "email_word", "subdirs")
+    missing = [key for key in required if key not in data]
+    if missing:
+        raise KeyError(f"missing filename template keys: {', '.join(missing)}")
+    if not isinstance(data.get("subdirs"), dict):
+        raise ValueError("filename_templates.yaml::subdirs must be a mapping")
+    return data
 
 
 def get_output_subdir(file_type: str, templates: dict | None = None) -> str:
@@ -382,57 +411,10 @@ def render_filename(template: str, **context) -> str:
     return template.format_map(_SafeFormatDict(safe_context))
 
 
-# ---------------------------------------------------------------------------
-# Content rules (loaded from config/content_rules.yaml)
-# ---------------------------------------------------------------------------
-DEFAULT_CONTENT_RULES = {
-    "meeting": {
-        "name_template": "{title} 测试用例评审会议纪要",
-        "place": "线上会议",
-        "time": {"strategy": "day_before", "source": "计划完成日期", "explicit_value": ""},
-    },
-    "participants": {
-        "source_columns": ["测试", "前端开发", "后端开发", "创建者"],
-        "separator": "、",
-    },
-    "todo": {
-        "plan_date": {"strategy": "day_before", "source": "计划完成日期", "explicit_value": ""},
-        "status": "已完成",
-        "note": "",
-    },
-}
-
-
-def _deep_merge(defaults: dict, overrides: dict) -> dict:
-    """Recursively merge *overrides* into *defaults* (defaults win on missing keys)."""
-    out = dict(defaults)
-    for key, value in (overrides or {}).items():
-        if isinstance(value, dict) and isinstance(out.get(key), dict):
-            out[key] = _deep_merge(out[key], value)
-        elif value is not None:
-            out[key] = value
-    return out
-
-
 def load_content_rules(path: Path | str | None = None) -> dict:
-    """Load content rules from YAML, with hardcoded fallback defaults.
-
-    Missing sections / keys fall back to :data:`DEFAULT_CONTENT_RULES`, so a
-    partially-edited YAML file never breaks generation.
-    """
+    """Load content rules from YAML."""
     target = Path(path) if path else CONTENT_RULES_PATH
-    try:
-        import yaml  # type: ignore
-    except ImportError:
-        return dict(DEFAULT_CONTENT_RULES)
-    if not target.exists():
-        return dict(DEFAULT_CONTENT_RULES)
-    try:
-        with target.open(encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-    except (OSError, yaml.YAMLError):
-        return dict(DEFAULT_CONTENT_RULES)
-    return _deep_merge(DEFAULT_CONTENT_RULES, data)
+    return _load_yaml_mapping(target)
 
 
 def resolve_date_by_strategy(spec: dict, source) -> str:
@@ -503,7 +485,8 @@ def render_meeting_name(template: str, **context) -> str:
 # ---------------------------------------------------------------------------
 # Default metadata used when the caller doesn't pass explicit values.
 # ---------------------------------------------------------------------------
-def derive_meeting_name(df: pd.DataFrame, product: str = "iBatchInsight") -> str:
+def derive_meeting_name(df: pd.DataFrame, product: str | None = None) -> str:
+    product_value = product or get_default_product()
     iterations = list_iterations(df)
     if len(iterations) == 1:
         suffix = iterations[0]
@@ -511,7 +494,7 @@ def derive_meeting_name(df: pd.DataFrame, product: str = "iBatchInsight") -> str
         suffix = "多迭代汇总"
     else:
         suffix = "需求评审"
-    return f"{product} {suffix} 测试用例评审会议纪要"
+    return f"{product_value} {suffix} 测试用例评审会议纪要"
 
 
 def ensure_outputs_dir() -> Path:

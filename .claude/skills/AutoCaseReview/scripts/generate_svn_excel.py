@@ -21,18 +21,19 @@ import xml.sax.saxutils as saxutils
 from pathlib import Path
 
 from data_loader import (
-    INPUTS_DIR,
     OUTPUTS_DIR,
+    TEMPLATES_DIR,
     ensure_outputs_dir,
+    get_default_product,
     get_output_subdir,
     list_iterations,
     load_content_rules,
     load_filename_templates,
+    load_template_names,
     render_filename,
     resolve_field_by_strategy,
 )
 
-TEMPLATE_NAME = "LC-SOP-RC-007-R02_测试用例评审_iBatchInsight_需求名称_版本号.xlsx"
 TARGET_SHEET_PATH = "xl/worksheets/sheet3.xml"   # 测试用例评审记录
 
 # Cell coordinates we patch in 测试用例评审记录.
@@ -125,6 +126,8 @@ def _write_patched_xlsx(template_path: Path, output_path: Path,
         )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists():
+        output_path.unlink()
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zout:
         for name, data in entries:
             zout.writestr(name, data)
@@ -143,7 +146,7 @@ def _multiline(values: list[str]) -> str:
 def generate(
     df,
     *,
-    product: str = "iBatchInsight",
+    product: str | None = None,
     version: str = "A1",
     initiator: str = "",
     host: str = "",
@@ -153,7 +156,8 @@ def generate(
     output_name: str | None = None,
     output_dir: Path | str | None = None,
 ) -> Path:
-    template_path = INPUTS_DIR / TEMPLATE_NAME
+    product_value = product or get_default_product()
+    template_path = TEMPLATES_DIR / load_template_names()["svn_excel"]
     if not template_path.exists():
         raise FileNotFoundError(f"template missing: {template_path}")
 
@@ -183,7 +187,7 @@ def generate(
     case_links_text = case_link_value or _multiline(link_lines)
 
     cell_values = {
-        CELL_PRODUCT: product or "iBatchInsight",
+        CELL_PRODUCT: product_value,
         CELL_ONES_REQS: _multiline(ones_lines),
         CELL_CASE_LINKS: case_links_text,
         CELL_INITIATOR: initiator_value,
@@ -207,7 +211,7 @@ def generate(
     templates = load_filename_templates()
     name = output_name or render_filename(
         templates["svn_excel"],
-        product=product,
+        product=product_value,
         title=subject,
         iteration=iteration_value,
         version=version or "",
@@ -226,7 +230,7 @@ def generate(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate SVN Excel (LC-SOP-RC-007-R02).")
     parser.add_argument("--iteration", help="Filter on 所属迭代 before generating.")
-    parser.add_argument("--product", default="iBatchInsight")
+    parser.add_argument("--product", default=get_default_product())
     parser.add_argument("--version", default="A1")
     parser.add_argument("--initiator", default="", help="发起人")
     parser.add_argument("--host", default="", help="主持人")

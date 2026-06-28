@@ -1,12 +1,13 @@
 """Generate the test-case-review email Word (single iteration).
 
-Layout mirrors ``inputs/email.png``:
+Layout mirrors ``inputs/templates/email.png``:
 
-  Hi All, 同事：
+  <configured greeting>
+  <configured intro>
 
-  1.评审方式：线上
+  <configured review method>
 
-  2.
+  <configured requirements title>
   ┌──────┬──────────────────────────────────┬──────┬──────────┬──────┐
   │ 编号 │ 标题                              │ 测试 │ 评审结果 │ 备注# │
   ├──────┼──────────────────────────────────┼──────┼──────────┼──────┤
@@ -14,7 +15,7 @@ Layout mirrors ``inputs/email.png``:
   └──────┴──────────────────────────────────┴──────┴──────────┴──────┘
 
   3.评审记录/代办事项
-  【需求标题】
+  #需求ID 需求标题
   • 代办事项原文（含 @责任人）
   ...
 """
@@ -33,27 +34,32 @@ from docx.shared import Pt
 
 from data_loader import (
     OUTPUTS_DIR,
-    TODO_COLUMNS,
     ensure_outputs_dir,
     expand_todos,
+    get_default_product,
     get_output_subdir,
     list_iterations,
+    load_content_rules,
     load_filename_templates,
     render_filename,
 )
 
-EMAIL_HEADERS = ["编号", "标题", "测试", "评审结果", "备注#"]
 DEFAULT_FONT = "微软雅黑"
 DEFAULT_SIZE_PT = 10.5
+SECTION_TITLE_SIZE_PT = 12
 
 
 # ---------------------------------------------------------------------------
 # Style helpers
 # ---------------------------------------------------------------------------
-def _apply_chinese_font(run, font_name: str = DEFAULT_FONT) -> None:
+def _apply_chinese_font(
+    run,
+    font_name: str = DEFAULT_FONT,
+    size_pt: float = DEFAULT_SIZE_PT,
+) -> None:
     """Make a run render Chinese characters correctly under python-docx."""
     run.font.name = font_name
-    run.font.size = Pt(DEFAULT_SIZE_PT)
+    run.font.size = Pt(size_pt)
     rPr = run._element.get_or_add_rPr()
     rFonts = rPr.find(qn("w:rFonts"))
     if rFonts is None:
@@ -81,13 +87,20 @@ def _set_cell_border(cell) -> None:
         border.set(qn("w:color"), "000000")
 
 
-def _add_paragraph(doc, text: str, *, bold: bool = False, indent: float = 0.0) -> None:
+def _add_paragraph(
+    doc,
+    text: str,
+    *,
+    bold: bool = False,
+    indent: float = 0.0,
+    size_pt: float = DEFAULT_SIZE_PT,
+) -> None:
     p = doc.add_paragraph()
     if indent:
         p.paragraph_format.left_indent = Pt(indent * 10)
     run = p.add_run(text)
     run.bold = bold
-    _apply_chinese_font(run)
+    _apply_chinese_font(run, size_pt=size_pt)
     return p
 
 
@@ -100,8 +113,8 @@ def _add_header_cell_shading(cell, fill: str = "D9E1F2") -> None:
     tc_pr.append(shd)
 
 
-def _fill_header_row(row) -> None:
-    for idx, header in enumerate(EMAIL_HEADERS):
+def _fill_header_row(row, headers: list[str]) -> None:
+    for idx, header in enumerate(headers):
         cell = row.cells[idx]
         cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         # Replace default empty paragraph
@@ -114,11 +127,11 @@ def _fill_header_row(row) -> None:
         _set_cell_border(cell)
 
 
-def _fill_body_row(row, requirement) -> None:
+def _fill_body_row(row, requirement, *, review_result: str) -> None:
     rid = str(requirement.get("ID", "")).strip()
     title = str(requirement.get("标题", "")).strip()
     tester = str(requirement.get("测试", "")).strip()
-    values = [rid, title, tester, "通过", ""]
+    values = [rid, title, tester, review_result, ""]
     for idx, value in enumerate(values):
         cell = row.cells[idx]
         cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
@@ -129,28 +142,31 @@ def _fill_body_row(row, requirement) -> None:
         _set_cell_border(cell)
 
 
-def _build_review_table(doc, df) -> None:
-    table = doc.add_table(rows=1, cols=len(EMAIL_HEADERS))
+def _build_review_table(doc, df, *, headers: list[str], review_result: str) -> None:
+    table = doc.add_table(rows=1, cols=len(headers))
     table.autofit = True
-    _fill_header_row(table.rows[0])
+    _fill_header_row(table.rows[0], headers)
     for _, row in df.iterrows():
         body_row = table.add_row()
-        _fill_body_row(body_row, row)
+        _fill_body_row(body_row, row, review_result=review_result)
+
+
+def _build_intro_line(template: str, product: str, iteration: str) -> str:
+    return template.format(product=product, iteration=iteration)
 
 
 def _build_todo_section(doc, df) -> int:
     """Section 3: ``评审记录/代办事项`` — group todos under each requirement."""
     emitted = 0
     for _, row in df.iterrows():
-        todos = [str(row.get(col, "")).strip() for col in TODO_COLUMNS]
-        todos = [t for t in todos if t]
+        todos = expand_todos(row.to_frame().T)
         if not todos:
             continue
         title = str(row.get("标题", "")).strip()
         rid = str(row.get("ID", "")).strip()
-        _add_paragraph(doc, f"【{rid} {title}】".strip(), bold=True)
+        _add_paragraph(doc, f"{rid} {title}".strip())
         for todo in todos:
-            _add_paragraph(doc, f"• {todo}", indent=0.5)
+            _add_paragraph(doc, f"• {todo['description']}", indent=0.5)
             emitted += 1
     return emitted
 
@@ -161,7 +177,8 @@ def _build_todo_section(doc, df) -> int:
 def generate(
     df,
     *,
-    product: str = "iBatchInsight",
+    product: str | None = None,
+    iteration: str | None = None,
     output_name: str | None = None,
     output_dir: Path | str | None = None,
 ) -> Path:
@@ -179,25 +196,42 @@ def generate(
     section.top_margin = Pt(36)
     section.bottom_margin = Pt(36)
 
-    # Greeting + section 1.
-    _add_paragraph(doc, "Hi All, 同事：")
-    _add_paragraph(doc, "1.评审方式：线上")
-    # Section 2 header (table follows immediately).
-    _add_paragraph(doc, "2.")
+    product_value = product or get_default_product()
+    email_cfg = load_content_rules().get("email", {})
+    iterations = list_iterations(df)
+    iteration_value = iteration or (iterations[0] if iterations else "评审")
 
-    _build_review_table(doc, df)
+    # Greeting + section 1.  Keep the wording aligned with inputs/templates/email.png.
+    _add_paragraph(doc, email_cfg["greeting"])
+    _add_paragraph(
+        doc,
+        _build_intro_line(
+            email_cfg["intro_template"],
+            product_value,
+            iteration_value,
+        ),
+        indent=2.5,
+    )
+    _add_paragraph(doc, email_cfg["review_method"], bold=True, size_pt=SECTION_TITLE_SIZE_PT)
+    # Section 2 header (table follows immediately).
+    _add_paragraph(doc, email_cfg["requirements_title"], bold=True, size_pt=SECTION_TITLE_SIZE_PT)
+
+    _build_review_table(
+        doc,
+        df,
+        headers=list(email_cfg["table_headers"]),
+        review_result=email_cfg["review_result"],
+    )
 
     _add_paragraph(doc, "")  # spacer
-    _add_paragraph(doc, "3.评审记录/代办事项")
+    _add_paragraph(doc, email_cfg["todos_title"], bold=True, size_pt=SECTION_TITLE_SIZE_PT)
     if _build_todo_section(doc, df) == 0:
-        _add_paragraph(doc, "本次评审无遗留代办事项。", indent=0.5)
+        _add_paragraph(doc, email_cfg["no_todos_text"], indent=0.5)
 
-    iterations = list_iterations(df)
-    iteration_value = iterations[0] if iterations else "评审"
     templates = load_filename_templates()
     name = output_name or render_filename(
         templates["email_word"],
-        product=product,
+        product=product_value,
         iteration=iteration_value,
         version="",  # email never carries a version tag
     )
@@ -207,6 +241,8 @@ def generate(
     out_dir = base_dir / subdir if subdir else base_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / name
+    if out_path.exists():
+        out_path.unlink()
     doc.save(str(out_path))
     return out_path
 
@@ -215,7 +251,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Generate email Word for one iteration.")
     parser.add_argument("--iteration", required=True,
                         help="所属迭代 value; email deliverable is single-iteration only.")
-    parser.add_argument("--product", default="iBatchInsight")
+    parser.add_argument("--product", default=get_default_product())
     parser.add_argument("--data-dir", default=None)
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--output-name", default=None)

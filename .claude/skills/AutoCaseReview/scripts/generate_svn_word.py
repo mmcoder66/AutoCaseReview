@@ -15,22 +15,20 @@ from docx import Document
 from docx.oxml.ns import qn
 
 from data_loader import (
-    INPUTS_DIR,
     OUTPUTS_DIR,
+    TEMPLATES_DIR,
     derive_meeting_name,
     ensure_outputs_dir,
     expand_todos,
+    get_default_product,
     get_output_subdir,
     list_iterations,
     load_content_rules,
     load_filename_templates,
+    load_template_names,
     render_filename,
     resolve_date_by_strategy,
-    strip_mentions,
-    TODO_COLUMNS,
 )
-
-TEMPLATE_NAME = "LC-SOP-RC-003-M01_会议纪要_iBatchInsight_测试用例评审_需求名称_版本号.docx"
 
 # Row indices inside doc.tables[0].
 ROW_MEETING_NAME = 1
@@ -152,52 +150,26 @@ def _fill_meeting_metadata(table, *, meeting_name, meeting_place, meeting_time,
 
 
 def _build_meeting_content(df) -> str:
-    """Compose the human-readable summary for the ``会议内容`` cell.
+    """Fill ``会议内容`` with all todo text from requirement_data.
 
-    Behaviour is driven by ``content_rules.yaml::meeting.content``:
-      * ``list_todos``     — when true, list each todo as a sub-bullet
-      * ``strip_mentions`` — when true, drop ``@责任人`` from the displayed text
+    SVN Word is generated per requirement, so this writes every
+    ``代办事项N@责任人`` value from the current requirement.  The source text is
+    preserved, including @mentions.
     """
     content_cfg = load_content_rules().get("meeting", {}).get("content", {})
-    list_todos = content_cfg.get("list_todos", True)
-    strip_at = content_cfg.get("strip_mentions", True)
-
-    iterations = list_iterations(df)
-    lines: list[str] = []
-    if iterations:
-        lines.append(f"本次评审覆盖迭代：{'、'.join(iterations)}。")
-    lines.append(f"共评审 {len(df)} 条需求/用例，评审结论：通过。")
-    lines.append("会议要点（按需求分组）：")
-
-    for _, row in df.iterrows():
-        rid = str(row.get("ID", "")).strip()
-        title = str(row.get("标题", "")).strip()
-        todos_raw = [str(row.get(col, "")).strip() for col in TODO_COLUMNS]
-        todos_raw = [t for t in todos_raw if t]
-
-        lines.append(f"- {rid} {title}".rstrip())
-
-        if not list_todos:
-            # Old behaviour: just a count suffix on the requirement line.
-            if todos_raw:
-                lines[-1] += f"（含 {len(todos_raw)} 条代办事项）"
-            continue
-
-        # list_todos=true: emit each todo as an indented bullet.
-        if not todos_raw:
-            lines.append("  • （无代办事项）")
-            continue
-        for todo in todos_raw:
-            text = strip_mentions(todo) if strip_at else todo
-            lines.append(f"  • {text}")
-
-    return "\n".join(lines)
+    todos = expand_todos(df)
+    if not todos:
+        return str(content_cfg.get("no_todos_text", "无"))
+    return "\n".join(str(item["description"]).strip() for item in todos if item["description"])
 
 
 def _fill_meeting_content(table, df) -> None:
     body_cell = table.rows[ROW_CONTENT_BODY].cells[COL_CONTENT_BODY]
-    content_lines = _build_meeting_content(df).split("\n")
-    _set_multiline_cell(body_cell, content_lines)
+    content = _build_meeting_content(df)
+    if not content:
+        _set_cell_text(body_cell, "")
+        return
+    _set_multiline_cell(body_cell, content.split("\n"))
 
 
 def _clear_existing_todo_rows(table) -> None:
@@ -235,10 +207,26 @@ def _append_todo_row(table, item: dict, todo_cfg: dict) -> None:
     _set_cell_text(row.cells[TODO_COL_NOTE], note)
 
 
+def _append_no_todo_row(table, todo_cfg: dict) -> None:
+    """Append one visible placeholder row when there are no todo items."""
+    row = table.add_row()
+    _apply_merge_grid(row, [(TODO_COL_DESC, TODO_COL_DESC + 1),
+                            (TODO_COL_DATE, TODO_COL_DATE + 1)])
+    _set_cell_text(row.cells[TODO_COL_SEQ], "1")
+    _set_cell_text(row.cells[TODO_COL_DESC], str(todo_cfg.get("no_items_text", "无")))
+    _set_cell_text(row.cells[TODO_COL_OWNER], "")
+    _set_cell_text(row.cells[TODO_COL_DATE], "")
+    _set_cell_text(row.cells[TODO_COL_STATUS], "")
+    _set_cell_text(row.cells[TODO_COL_NOTE], "")
+
+
 def _fill_todo_section(table, df) -> int:
     _clear_existing_todo_rows(table)
     todo_cfg = load_content_rules().get("todo", {})
     todos = expand_todos(df)
+    if not todos:
+        _append_no_todo_row(table, todo_cfg)
+        return 0
     for item in todos:
         _append_todo_row(table, item, todo_cfg)
     return len(todos)
@@ -250,7 +238,7 @@ def _fill_todo_section(table, df) -> int:
 def generate(
     df,
     *,
-    product: str = "iBatchInsight",
+    product: str | None = None,
     version: str = "A1",
     meeting_name: str | None = None,
     meeting_place: str = "线上会议",
@@ -261,7 +249,8 @@ def generate(
     output_name: str | None = None,
     output_dir: Path | str | None = None,
 ) -> Path:
-    template_path = INPUTS_DIR / TEMPLATE_NAME
+    product_value = product or get_default_product()
+    template_path = TEMPLATES_DIR / load_template_names()["svn_word"]
     if not template_path.exists():
         raise FileNotFoundError(f"template missing: {template_path}")
 
@@ -270,7 +259,7 @@ def generate(
         raise RuntimeError("template has no table; cannot fill")
     table = doc.tables[0]
 
-    resolved_name = meeting_name or derive_meeting_name(df, product=product)
+    resolved_name = meeting_name or derive_meeting_name(df, product=product_value)
     _fill_meeting_metadata(
         table,
         meeting_name=resolved_name,
@@ -297,7 +286,7 @@ def generate(
     templates = load_filename_templates()
     name = output_name or render_filename(
         templates["svn_word"],
-        product=product,
+        product=product_value,
         title=subject,
         iteration=iteration_value,
         version=version or "",
@@ -309,6 +298,8 @@ def generate(
     out_dir = base_dir / subdir if subdir else base_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / name
+    if out_path.exists():
+        out_path.unlink()
     doc.save(str(out_path))
     return out_path
 
@@ -316,7 +307,7 @@ def generate(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate SVN Word (LC-SOP-RC-003-M01).")
     parser.add_argument("--iteration", help="Filter on 所属迭代 before generating.")
-    parser.add_argument("--product", default="iBatchInsight")
+    parser.add_argument("--product", default=get_default_product())
     parser.add_argument("--version", default="A1")
     parser.add_argument("--meeting-name", default=None)
     parser.add_argument("--meeting-place", default="线上会议")
