@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"\nimport zipfile\nxlsx_file = ''LC-SOP-RC-007-R02_测试用例评审_iBatchInsight_需求名称_版本号.xlsx''\nwith zipfile.ZipFile\\(xlsx_file, ''r''\\) as z:\n    print\\(''=== XLSX contents ===''\\)\n    for n in z.namelist\\(\\):\n        print\\(n\\)\n\")",
+      "Bash(python3:*)",
+      "Bash(pip3 install:*)",
+      "Bash(cd /Users/hml/Documents/Study/AI/AutoCaseReview/.claude/skills/AutoCaseReview/scripts rm -f ../outputs/*.xlsx ../outputs/*.docx echo \"=== Test 1: --mode email \\(single iteration\\) ===\" python3 main.py --mode email --iteration CPV-SP7)",
+      "Bash(tail -8 echo \"\" echo \"=== Test 2: --mode svn \\(cross-iteration capable\\) ===\" python3 main.py --mode svn --meeting-time \"2026-06-25 14:00\" --recorder \"黄美玲\" --initiator \"荆慧慧\" --host \"荆慧慧\" --reviewer \"张三\" --review-date \"2026-06-25\")",
+      "Bash(tail -8 echo \"\" echo \"=== Test 3: --mode email without --iteration \\(should fail\\) ===\" python3 main.py --mode email)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(ls:*)",
+      "Bash(cd /Users/hml/Documents/Study/AI/AutoCaseReview/.claude/skills/AutoCaseReview/outputs ls -1)",
+      "Bash(cd /Users/hml/Documents/Study/AI/AutoCaseReview/.claude/skills/AutoCaseReview/scripts echo \"=== Test: --mode svn without --version \\(expect error\\) ===\" python3 main.py --mode svn 2)",
+      "Bash(1 echo \"exit=$?\" echo \"\" echo \"=== Test: --mode email without --version \\(should still work, version is irrelevant\\) ===\" python3 main.py --mode email --iteration CPV-SP7)",
+      "Bash(cd /Users/hml/Documents/Study/AI/AutoCaseReview/.claude/skills/AutoCaseReview/scripts rm -f ../outputs/*.xlsx ../outputs/*.docx python3 main.py --mode all --iteration CPV-SP7 --version \"v1.0.1\" --meeting-time \"2026-06-25 14:00\" --recorder \"黄美玲\" --initiator \"荆慧慧\" --host \"荆慧慧\" --reviewer \"张三\" --review-date \"2026-06-25\")",
+      "Bash(cd /Users/hml/Documents/Study/AI/AutoCaseReview/.claude/skills/AutoCaseReview/scripts rm -f ../outputs/*.xlsx ../outputs/*.docx python3 main.py --mode svn --version \"v1.0.1\" --meeting-time \"2026-06-25 14:00\" --recorder \"黄美玲\" --initiator \"荆慧慧\" --host \"荆慧慧\" --reviewer \"张三\" --review-date \"2026-06-25\")",
+      "Bash(cd /Users/hml/Documents/Study/AI/AutoCaseReview/.claude/skills/AutoCaseReview/scripts python3 main.py --mode svn --version \"v1.0.1\" --meeting-time \"2026-06-25 14:00\" --recorder \"黄美玲\" --initiator \"荆慧慧\" --host \"荆慧慧\" --reviewer \"张三\" --review-date \"2026-06-25\")",
+      "Bash(cd /Users/hml/Documents/Study/AI/AutoCaseReview/.claude/skills/AutoCaseReview/scripts rm -f ../outputs/*.xlsx ../outputs/*.docx python3 main.py --mode svn --version \"v1.0.1\" --recorder \"黄美玲\" --initiator \"荆慧慧\" --host \"荆慧慧\" --reviewer \"张三\" --review-date \"2026-06-25\")",
+      "Bash(cd:*)",
+      "Bash(head -1 echo \"\" echo \"=== 模板里的内部文件 ===\" python3 -c \"\nimport zipfile\nwith zipfile.ZipFile\\(''''inputs/LC-SOP-RC-007-R02_测试用例评审_iBatchInsight_需求名称_版本号.xlsx''''\\) as z:\n    for n in z.namelist\\(\\): print\\('''' '''', n\\)\n\")",
+      "Bash(head -30 echo \"\" echo \"=== 生成文件里的内部文件 ===\" python3 -c \"\nimport zipfile, glob\nf = sorted\\(glob.glob\\(''''outputs/测试用例评审/*.xlsx''''\\)\\)[0]\nprint\\(f''''文件: {f}''''\\)\nwith zipfile.ZipFile\\(f\\) as z:\n    for n in z.namelist\\(\\): print\\('''' '''', n\\)\n\")"
+    ]
+  }
+}

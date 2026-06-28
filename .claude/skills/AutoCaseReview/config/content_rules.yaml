@@ -1,0 +1,89 @@
+# ============================================================================
+# 文档内容规则 — 控制生成到 Word / Excel 里的业务字段值。
+# 修改这里即可，无需改 Python 代码。
+#
+# 通用约定：
+#   - "strategy" 字段决定算法；当前支持 "day_before"（前一天）与 "explicit"（固定值）
+#   - 模板支持占位符：{title} {req_id} {iteration} {product}
+# ============================================================================
+
+# ---- 会议元信息 -------------------------------------------------------------
+meeting:
+  # 会议名称模板（{title} = 当前需求标题）
+  name_template: "{title} 测试用例评审会议纪要"
+
+  # 会议地点（默认填法）
+  place: "线上会议"
+
+  # 会议时间策略
+  #   day_before : 取 source 字段的"前一天"
+  #   explicit   : 使用 explicit_value（用户也可以通过 --meeting-time 覆盖）
+  time:
+    strategy: "day_before"
+    source: "计划完成日期"
+    explicit_value: ""
+
+  # 会议内容（Word "会议内容" 单元格里的正文）
+  content:
+    # true  = 在每条需求下面逐条列出代办事项
+    # false = 只汇总数量（"含 N 条代办事项"）
+    list_todos: true
+    # true  = 显示代办事项时移除 @责任人 标记
+    # false = 保留 @责任人 原文
+    strip_mentions: true
+
+# ---- 参会人员 ---------------------------------------------------------------
+# 按列从右到左的去重顺序；列名必须与 requirement_data xlsx 的列头一致。
+participants:
+  source_columns: ["测试", "前端开发", "后端开发", "创建者"]
+  separator: "、"
+
+# ---- 改进或遗留工作项（SVN Word 中的表格） ---------------------------------
+todo:
+  # 计划解决日期策略（与会议时间一致：默认取计划完成日期的前一天）
+  plan_date:
+    strategy: "day_before"
+    source: "计划完成日期"
+    explicit_value: ""
+
+  # 状态固定值
+  status: "已完成"
+
+  # 备注固定值（空字符串表示留空）
+  note: ""
+
+# ---- Excel 评审记录页签里的可派生字段 --------------------------------------
+# 策略（strategy）可选：
+#   column       - 取 row[source] 单列的值
+#   columns_join - 把 row[sources...] 多列去重后用 separator 拼起来
+#   day_before   - 取 row[source] 的前一天
+#   explicit     - 用 explicit_value 字面量
+#
+# CLI 显式参数（--initiator / --host / --reviewer / --review-date）会覆盖这里的策略。
+excel:
+  # 发起人 = 取 "测试" 列
+  initiator:
+    strategy: "column"
+    source: "测试"
+
+  # 主持人 = 取 "测试" 列
+  host:
+    strategy: "column"
+    source: "测试"
+
+  # 评审人 = 测试 + 创建者 + 前端 + 后端 去重
+  reviewer:
+    strategy: "columns_join"
+    sources: ["测试", "创建者", "前端开发", "后端开发"]
+    separator: "、"
+
+  # 评审时间 = 计划完成日期 前一天
+  review_date:
+    strategy: "day_before"
+    source: "计划完成日期"
+
+  # 测试用例链接 = 直接取 "测试用例链接" 列
+  case_link:
+    strategy: "column"
+    source: "测试用例链接"
+
