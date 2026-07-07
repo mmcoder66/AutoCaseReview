@@ -24,7 +24,8 @@
       "Bash(git check-ignore:*)",
       "Bash(git rev-parse:*)",
       "Bash(xargs:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(git grep:*)"
     ]
   }
 }

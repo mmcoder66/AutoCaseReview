@@ -40,8 +40,8 @@ ROW_MEETING_TIME = 3
 ROW_PARTICIPANTS = 4
 ROW_CONTENT_HEADER = 7
 ROW_CONTENT_BODY = 8
-ROW_TODO_HEADER = 10
-FIRST_TODO_ROW = 11   # template ships rows 11 and 12 as samples.
+ROW_BACKLOG_HEADER = 10
+FIRST_BACKLOG_ROW = 11   # template ships rows 11 and 12 as samples.
 
 # Column indices inside the table.
 COL_LABEL = 0
@@ -53,12 +53,12 @@ COL_PARTICIPANTS_VAL = 2
 COL_CONTENT_BODY = 0       # merged across all 8 cols
 
 # 改进或遗留工作项 columns (after merge): 序号 / 问题描述 / 责任人 / 计划解决日期 / 状态 / 备注
-TODO_COL_SEQ = 0
-TODO_COL_DESC = 1          # merged with col 2
-TODO_COL_OWNER = 3
-TODO_COL_DATE = 4          # merged with col 5
-TODO_COL_STATUS = 6
-TODO_COL_NOTE = 7
+BACKLOG_COL_SEQ = 0
+BACKLOG_COL_DESC = 1          # merged with col 2
+BACKLOG_COL_OWNER = 3
+BACKLOG_COL_DATE = 4          # merged with col 5
+BACKLOG_COL_STATUS = 6
+BACKLOG_COL_NOTE = 7
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +177,7 @@ def _fill_meeting_content(table, df) -> None:
 
 def _clear_existing_todo_rows(table) -> None:
     """Remove the template's placeholder rows 11+ from the todo section."""
-    while len(table.rows) > FIRST_TODO_ROW:
+    while len(table.rows) > FIRST_BACKLOG_ROW:
         last = table.rows[-1]
         last._element.getparent().remove(last._element)
 
@@ -192,8 +192,8 @@ def _append_todo_row(table, item: dict, todo_cfg: dict) -> None:
     """
     row = table.add_row()
     # Mirror the template's merge grid: cols 1-2 (问题描述) and 4-5 (计划解决日期).
-    _apply_merge_grid(row, [(TODO_COL_DESC, TODO_COL_DESC + 1),
-                            (TODO_COL_DATE, TODO_COL_DATE + 1)])
+    _apply_merge_grid(row, [(BACKLOG_COL_DESC, BACKLOG_COL_DESC + 1),
+                            (BACKLOG_COL_DATE, BACKLOG_COL_DATE + 1)])
 
     owners = "、".join(item["owners"]) if item["owners"] else ""
     # Build a tiny dict so resolve_date_by_strategy can read 计划完成日期 from the item.
@@ -202,25 +202,25 @@ def _append_todo_row(table, item: dict, todo_cfg: dict) -> None:
     status = todo_cfg.get("status", "")
     note = todo_cfg.get("note", "")
 
-    _set_cell_text(row.cells[TODO_COL_SEQ], str(item["seq"]))
-    _set_cell_text(row.cells[TODO_COL_DESC], item["description"])
-    _set_cell_text(row.cells[TODO_COL_OWNER], owners)
-    _set_cell_text(row.cells[TODO_COL_DATE], plan_date)
-    _set_cell_text(row.cells[TODO_COL_STATUS], status)
-    _set_cell_text(row.cells[TODO_COL_NOTE], note)
+    _set_cell_text(row.cells[BACKLOG_COL_SEQ], str(item["seq"]))
+    _set_cell_text(row.cells[BACKLOG_COL_DESC], item["description"])
+    _set_cell_text(row.cells[BACKLOG_COL_OWNER], owners)
+    _set_cell_text(row.cells[BACKLOG_COL_DATE], plan_date)
+    _set_cell_text(row.cells[BACKLOG_COL_STATUS], status)
+    _set_cell_text(row.cells[BACKLOG_COL_NOTE], note)
 
 
 def _append_no_todo_row(table, todo_cfg: dict) -> None:
     """Append one visible placeholder row when there are no todo items."""
     row = table.add_row()
-    _apply_merge_grid(row, [(TODO_COL_DESC, TODO_COL_DESC + 1),
-                            (TODO_COL_DATE, TODO_COL_DATE + 1)])
-    _set_cell_text(row.cells[TODO_COL_SEQ], "1")
-    _set_cell_text(row.cells[TODO_COL_DESC], str(todo_cfg.get("no_items_text", "无")))
-    _set_cell_text(row.cells[TODO_COL_OWNER], "")
-    _set_cell_text(row.cells[TODO_COL_DATE], "")
-    _set_cell_text(row.cells[TODO_COL_STATUS], "")
-    _set_cell_text(row.cells[TODO_COL_NOTE], "")
+    _apply_merge_grid(row, [(BACKLOG_COL_DESC, BACKLOG_COL_DESC + 1),
+                            (BACKLOG_COL_DATE, BACKLOG_COL_DATE + 1)])
+    _set_cell_text(row.cells[BACKLOG_COL_SEQ], "1")
+    _set_cell_text(row.cells[BACKLOG_COL_DESC], str(todo_cfg.get("no_items_text", "无")))
+    _set_cell_text(row.cells[BACKLOG_COL_OWNER], "")
+    _set_cell_text(row.cells[BACKLOG_COL_DATE], "")
+    _set_cell_text(row.cells[BACKLOG_COL_STATUS], "")
+    _set_cell_text(row.cells[BACKLOG_COL_NOTE], "")
 
 
 def _fill_todo_section(table, df) -> int:

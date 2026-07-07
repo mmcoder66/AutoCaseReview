@@ -14,7 +14,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 from data_loader import (  # noqa: E402
     CANONICAL_COLUMNS,
     REQUIREMENT_DATA_DIR,
-    TODO_LOOSE_RE,
+    BACKLOG_LOOSE_RE,
     get_todo_columns,
     list_iterations,
     load_all_requirements,
@@ -117,7 +117,7 @@ def validate_requirements(
 
     malformed_todos = [
         col for col in df.columns
-        if TODO_LOOSE_RE.search(str(col)) and col not in todo_columns
+        if BACKLOG_LOOSE_RE.search(str(col)) and col not in todo_columns
     ]
     if malformed_todos:
         warnings.append(

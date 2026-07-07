@@ -70,13 +70,13 @@ COLUMN_ALIASES = {
 # Spaces are tolerated ANYWHERE in the header (leading, between any two
 # characters, trailing) because Ones exports / manual editing sometimes insert
 # stray spaces, e.g. " 待办 事项 1 " must still be recognised.
-TODO_COLUMN_RE = re.compile(r"^\s*待\s*办\s*事\s*项\s*(\d+)\s*$")
+BACKLOG_COLUMN_RE = re.compile(r"^\s*待\s*办\s*事\s*项\s*(\d+)\s*$")
 
 # Loose pattern used only to flag columns that LOOK like todo columns but do
-# not strictly match ``TODO_COLUMN_RE`` (e.g. "待办事项1@责任人", "待办事项X",
+# not strictly match ``BACKLOG_COLUMN_RE`` (e.g. "待办事项1@责任人", "待办事项X",
 # or the common typo "代办事项1").  It accepts BOTH 待/代 so that a typo'd
 # header is reported via the validator instead of being silently dropped.
-TODO_LOOSE_RE = re.compile(r"[代待]\s*办\s*事\s*项")
+BACKLOG_LOOSE_RE = re.compile(r"[代待]\s*办\s*事\s*项")
 
 # Matches substrings like "@黄美玲" or "@Zhang San".
 #
@@ -112,7 +112,7 @@ def _strip_invisible(text: str) -> str:
 
     Ones exports occasionally append hundreds of zero-width spaces (U+200B)
     to header cells, which breaks strict regex matching (e.g. the trailing
-    ``$`` in :data:`TODO_COLUMN_RE`).  Python's default ``str.strip()`` does
+    ``$`` in :data:`BACKLOG_COLUMN_RE`).  Python's default ``str.strip()`` does
     NOT remove these because they aren't classified as whitespace by the
     Unicode standard — so we strip them explicitly here.
 
@@ -125,7 +125,7 @@ def _strip_invisible(text: str) -> str:
 
 def _normalise_columns(df: pd.DataFrame) -> pd.DataFrame:
     # Step 1: clean every column header of invisible characters so downstream
-    # regex matching (alias map / TODO_COLUMN_RE) works reliably.
+    # regex matching (alias map / BACKLOG_COLUMN_RE) works reliably.
     cleaned_cols = {col: _strip_invisible(col) for col in df.columns}
     df = df.rename(columns=cleaned_cols)
 
@@ -146,7 +146,7 @@ def _normalise_columns(df: pd.DataFrame) -> pd.DataFrame:
     # these inert columns are never used as real todos.
     malformed_todos = [
         str(c) for c in df.columns
-        if TODO_LOOSE_RE.search(str(c)) and str(c) not in todo_columns
+        if BACKLOG_LOOSE_RE.search(str(c)) and str(c) not in todo_columns
         and str(c) not in CANONICAL_COLUMNS
     ]
     # De-duplicate while preserving order (df may have duplicate header names).
@@ -159,12 +159,12 @@ def get_todo_columns(df: pd.DataFrame) -> list[str]:
     """Return all ``待办事项N`` columns sorted by N, then original order.
 
     Headers may contain arbitrary spaces anywhere (leading, between chars,
-    trailing); they are matched leniently by :data:`TODO_COLUMN_RE`.
+    trailing); they are matched leniently by :data:`BACKLOG_COLUMN_RE`.
     """
     indexed: list[tuple[int, int, str]] = []
     for position, col in enumerate(df.columns):
         name = str(col).strip()
-        match = TODO_COLUMN_RE.match(name)
+        match = BACKLOG_COLUMN_RE.match(name)
         if match:
             indexed.append((int(match.group(1)), position, name))
     return [name for _, _, name in sorted(indexed)]
