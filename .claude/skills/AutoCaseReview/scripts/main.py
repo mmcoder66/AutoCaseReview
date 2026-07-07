@@ -34,6 +34,7 @@ from data_loader import (  # noqa: E402
     list_iterations,
     load_all_requirements,
     load_content_rules,
+    normalise_version,
     render_meeting_name,
     resolve_date_by_strategy,
     sanitize_filename,
@@ -42,16 +43,6 @@ from generate_email_word import generate as gen_email  # noqa: E402
 from generate_svn_excel import generate as gen_excel  # noqa: E402
 from generate_svn_word import generate as gen_word  # noqa: E402
 from validate_data import print_validation_result, validate_requirements  # noqa: E402
-
-
-def _normalise_version(version: str | None) -> str | None:
-    """Prefix plain numeric versions with "v" for SVN filenames."""
-    if not version:
-        return version
-    text = version.strip()
-    if text[:1].isdigit():
-        return f"v{text}"
-    return text
 
 
 def _clear_output_subdirs(args, file_types: list[str]) -> None:
@@ -216,7 +207,7 @@ def main() -> int:
             "--version is required when --mode is svn or all.  "
             "Ask the user for the current release/version tag before running."
         )
-    args.version = _normalise_version(args.version)
+    args.version = normalise_version(args.version)
 
     df_all = load_all_requirements(
         args.data_dir,

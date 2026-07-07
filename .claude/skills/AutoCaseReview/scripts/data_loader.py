@@ -310,18 +310,6 @@ def extract_mentions(text: str) -> list[str]:
     return out
 
 
-def strip_mentions(text: str) -> str:
-    """Remove @-mentions from *text* and tidy up leftover whitespace.
-
-    Example: ``"预览不可编辑 @黄美玲 修改用例"`` → ``"预览不可编辑 修改用例"``
-    """
-    if not text:
-        return ""
-    cleaned = MENTION_RE.sub("", text)
-    cleaned = re.sub(r"\s{2,}", " ", cleaned)
-    return cleaned.strip()
-
-
 def expand_todos(df: pd.DataFrame) -> list[dict]:
     """Flatten ``待办事项N`` cells into one record per todo item.
 
@@ -543,19 +531,19 @@ def render_meeting_name(template: str, **context) -> str:
     return template.format_map(_SafeFormatDict(context))
 
 
-# ---------------------------------------------------------------------------
-# Default metadata used when the caller doesn't pass explicit values.
-# ---------------------------------------------------------------------------
-def derive_meeting_name(df: pd.DataFrame, product: str | None = None) -> str:
-    product_value = product or get_default_product()
-    iterations = list_iterations(df)
-    if len(iterations) == 1:
-        suffix = iterations[0]
-    elif len(iterations) > 1:
-        suffix = "多迭代汇总"
-    else:
-        suffix = "需求评审"
-    return f"{product_value} {suffix} 测试用例评审会议纪要"
+def normalise_version(version: str | None) -> str | None:
+    """Prefix plain numeric versions with "v" for SVN filenames.
+
+    ``"1.0.2"`` → ``"v1.0.2"``; ``"v1.0.2"`` / ``"SP7"`` / ``None`` unchanged.
+    Shared by main.py and the per-deliverable standalone CLIs so version
+    handling is identical everywhere.
+    """
+    if not version:
+        return version
+    text = version.strip()
+    if text[:1].isdigit():
+        return f"v{text}"
+    return text
 
 
 def ensure_outputs_dir() -> Path:

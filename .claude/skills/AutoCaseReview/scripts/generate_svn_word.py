@@ -17,17 +17,20 @@ from docx.oxml.ns import qn
 from data_loader import (
     OUTPUTS_DIR,
     TEMPLATES_DIR,
-    derive_meeting_name,
     ensure_outputs_dir,
     expand_todos,
     get_default_product,
     get_output_subdir,
+    iter_requirements,
     list_iterations,
     load_content_rules,
     load_filename_templates,
     load_template_names,
+    normalise_version,
     render_filename,
+    render_meeting_name,
     resolve_date_by_strategy,
+    sanitize_filename,
 )
 
 # Row indices inside doc.tables[0].
@@ -259,7 +262,18 @@ def generate(
         raise RuntimeError("template has no table; cannot fill")
     table = doc.tables[0]
 
-    resolved_name = meeting_name or derive_meeting_name(df, product=product_value)
+    resolved_name = meeting_name
+    if not resolved_name:
+        # Single source of truth: content_rules.yaml::meeting.name_template.
+        # All CLI entry points (main.py + standalone main) pre-compute the name
+        # via render_meeting_name; this fallback only covers direct library use.
+        meeting_cfg = load_content_rules().get("meeting", {})
+        title = str(df.iloc[0].get("标题", "")).strip() if len(df) else ""
+        resolved_name = render_meeting_name(
+            meeting_cfg.get("name_template", "{title} 测试用例评审会议纪要"),
+            title=title,
+            product=product_value,
+        )
     _fill_meeting_metadata(
         table,
         meeting_name=resolved_name,
@@ -305,41 +319,77 @@ def generate(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate SVN Word (LC-SOP-RC-003-R01).")
+    parser = argparse.ArgumentParser(
+        description="Generate SVN Word (LC-SOP-RC-003-R01), one per requirement."
+    )
     parser.add_argument("--iteration", help="Filter on 所属迭代 before generating.")
     parser.add_argument("--product", default=get_default_product())
-    parser.add_argument("--version", default="A1")
-    parser.add_argument("--meeting-name", default=None)
-    parser.add_argument("--meeting-place", default="线上会议")
-    parser.add_argument("--meeting-time", default="")
-    parser.add_argument("--recorder", default="")
+    parser.add_argument("--version", required=True,
+                        help="Release/version tag (e.g. 1.0.1 -> v1.0.1). Required.")
+    parser.add_argument("--meeting-name", default=None,
+                        help="Override 会议名称 (default: rendered from content_rules.yaml::meeting.name_template).")
+    parser.add_argument("--meeting-place", default=None,
+                        help="Override 会议地点 (default from content_rules.yaml::meeting.place).")
+    parser.add_argument("--meeting-time", default=None,
+                        help="Override 会议时间 (default: day-before 计划完成日期).")
+    parser.add_argument("--recorder", default="", help="记录人员")
     parser.add_argument("--participants", default=None,
-                        help="Comma-separated; auto-derived from data if omitted.")
+                        help="Comma-separated; auto-derived per requirement if omitted.")
     parser.add_argument("--data-dir", default=None)
     parser.add_argument("--output-dir", default=None)
-    parser.add_argument("--output-name", default=None)
     args = parser.parse_args()
 
     from data_loader import collect_participants, load_all_requirements
 
-    df = load_all_requirements(args.data_dir, iteration=args.iteration)
-    participants = args.participants
-    if participants is None:
-        participants = "、".join(collect_participants(df))
+    rules = load_content_rules()
+    meeting_cfg = rules["meeting"]
+    participants_cfg = rules["participants"]
+    version = normalise_version(args.version)
 
-    out = generate(
-        df,
-        product=args.product,
-        version=args.version,
-        meeting_name=args.meeting_name,
-        meeting_place=args.meeting_place,
-        meeting_time=args.meeting_time,
-        recorder=args.recorder,
-        participants=participants,
-        output_name=args.output_name,
-        output_dir=args.output_dir,
-    )
-    print(f"OK  rows={len(df)}  -> {out}")
+    df = load_all_requirements(args.data_dir, iteration=args.iteration)
+    outputs: list[Path] = []
+    for req_id, req_title, df_row in iter_requirements(df):
+        subject = sanitize_filename(req_title) or req_id
+        row = df_row.iloc[0]
+
+        meeting_name = args.meeting_name or render_meeting_name(
+            meeting_cfg["name_template"],
+            title=req_title,
+            req_id=req_id,
+            iteration=str(row.get("所属迭代", "")).strip(),
+            product=args.product,
+        )
+        meeting_place = args.meeting_place or meeting_cfg.get("place", "线上会议")
+        meeting_time = args.meeting_time or resolve_date_by_strategy(
+            meeting_cfg.get("time", {}), row
+        )
+        if args.participants is not None:
+            participants = args.participants
+        else:
+            participants = collect_participants(
+                df_row,
+                roles=participants_cfg.get("source_columns"),
+                separator=participants_cfg.get("separator", "、"),
+            )
+        recorder = args.recorder or str(row.get("测试", "")).strip()
+
+        out = generate(
+            df_row,
+            product=args.product,
+            version=version,
+            meeting_name=meeting_name,
+            meeting_place=meeting_place,
+            meeting_time=meeting_time,
+            recorder=recorder,
+            participants=participants,
+            subject=subject,
+            output_dir=args.output_dir,
+        )
+        outputs.append(out)
+
+    print(f"Generated {len(outputs)} Word file(s):")
+    for o in outputs:
+        print(f"  - {o}")
     return 0
 
 

@@ -6,4 +6,6 @@
 product: "iBatchInsight"
 
 # 邮件模式从提示词中提取的迭代关键字通常形如 SP7 / SP8 / SP9。
+# 说明：本字段仅供 AI 技能层（SKILL.md / 提示词解析）参考，Python 脚本不读取；
+# 脚本侧通过 CLI 参数 --data-file-keyword 传入筛选关键字。
 iteration_keyword_pattern: "SP\\d+"

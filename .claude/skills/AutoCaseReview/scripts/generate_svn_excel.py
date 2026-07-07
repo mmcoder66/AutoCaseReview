@@ -33,12 +33,15 @@ from data_loader import (
     ensure_outputs_dir,
     get_default_product,
     get_output_subdir,
+    iter_requirements,
     list_iterations,
     load_content_rules,
     load_filename_templates,
     load_template_names,
+    normalise_version,
     render_filename,
     resolve_field_by_strategy,
+    sanitize_filename,
 )
 
 TARGET_SHEET_PATH = "xl/worksheets/sheet3.xml"   # 测试用例评审记录
@@ -359,10 +362,13 @@ def generate(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate SVN Excel (LC-SOP-RC-007-R02).")
+    parser = argparse.ArgumentParser(
+        description="Generate SVN Excel (LC-SOP-RC-007-R02), one per requirement."
+    )
     parser.add_argument("--iteration", help="Filter on 所属迭代 before generating.")
     parser.add_argument("--product", default=get_default_product())
-    parser.add_argument("--version", default="A1")
+    parser.add_argument("--version", required=True,
+                        help="Release/version tag (e.g. 1.0.1 -> v1.0.1). Required.")
     parser.add_argument("--initiator", default="", help="发起人")
     parser.add_argument("--host", default="", help="主持人")
     parser.add_argument("--reviewer", default="", help="评审人")
@@ -371,25 +377,32 @@ def main() -> int:
                         help="签名页起草行签名列填充值；默认按 content_rules.yaml::excel.signature 策略派生")
     parser.add_argument("--data-dir", default=None, help="Override requirement_data directory.")
     parser.add_argument("--output-dir", default=None)
-    parser.add_argument("--output-name", default=None)
     args = parser.parse_args()
 
     from data_loader import load_all_requirements
 
+    version = normalise_version(args.version)
     df = load_all_requirements(args.data_dir, iteration=args.iteration)
-    out = generate(
-        df,
-        product=args.product,
-        version=args.version,
-        initiator=args.initiator,
-        host=args.host,
-        reviewer=args.reviewer,
-        review_date=args.review_date,
-        signature_name=args.signature,
-        output_name=args.output_name,
-        output_dir=args.output_dir,
-    )
-    print(f"OK  rows={len(df)}  -> {out}")
+    outputs: list[Path] = []
+    for req_id, req_title, df_row in iter_requirements(df):
+        subject = sanitize_filename(req_title) or req_id
+        out = generate(
+            df_row,
+            product=args.product,
+            version=version,
+            initiator=args.initiator,
+            host=args.host,
+            reviewer=args.reviewer,
+            review_date=args.review_date,
+            signature_name=args.signature,
+            subject=subject,
+            output_dir=args.output_dir,
+        )
+        outputs.append(out)
+
+    print(f"Generated {len(outputs)} Excel file(s):")
+    for o in outputs:
+        print(f"  - {o}")
     return 0
 
 

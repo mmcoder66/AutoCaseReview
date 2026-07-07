@@ -26,10 +26,13 @@ python main.py --mode svn --version "<VERSION>"
 python main.py --mode email --data-file-keyword <SP_KEYWORD> --validate-only
 ```
 
-如果需要使用项目根目录的虚拟环境，可执行：
+如果需要使用项目根目录的虚拟环境，可执行（macOS / Linux 用正斜杠，Windows 用反斜杠）：
 
 ```bash
-.\.venv\Scripts\python.exe .claude\skills\AutoCaseReview\scripts\main.py --mode email --data-file-keyword SP8
+# macOS / Linux
+.venv/bin/python .claude/skills/AutoCaseReview/scripts/main.py --mode email --data-file-keyword SP8
+# Windows
+.venv\Scripts\python.exe .claude\skills\AutoCaseReview\scripts\main.py --mode email --data-file-keyword SP8
 ```
 
 ## 数据选择
@@ -64,7 +67,7 @@ python main.py --mode email --data-file-keyword <SP_KEYWORD> --validate-only
 | SVN Word | `参会人员` | `测试 + 前端开发 + 后端开发 + 创建者` 去重 |
 | SVN Word | `会议内容` | 当前需求所有 `待办事项N` 原文；无待办填 `无` |
 | SVN Word | `改进或遗留工作项` | 每条待办 1 行；责任人从 `@姓名` 提取；无待办填 `无` |
-| 邮件 Word | 需求表 | `ID / 标题 / 测试 / 通过 / 空备注` |
+| 邮件 Word | 需求表 | 表头 `编号 / 标题 / 测试 / 评审结果 / 备注#`；评审结果固定为 `通过`，备注留空 |
 | 邮件 Word | 章节标题 | `1.`、`2.`、`3.` 加粗；`3.评审记录/待办事项` 下的需求 ID 和标题不加粗且字号更小 |
 | 邮件 Word | 待办列表 | 按需求分组，保留 `@责任人` 原文 |
 

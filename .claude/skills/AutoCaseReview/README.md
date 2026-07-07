@@ -24,7 +24,8 @@
 │   ├── generate_svn_excel.py        # 生成 LC-SOP-RC-007-R02 Excel
 │   ├── generate_svn_word.py         # 生成 LC-SOP-RC-003-R01 Word
 │   ├── generate_email_word.py       # 生成评审邮件 Word
-│   └── main.py                      # CLI 统一入口
+│   ├── main.py                      # CLI 统一入口
+│   └── validate_data.py             # 生成前数据校验
 └── config/                          # 可配置项
     ├── project.yaml                 # 产品名、提示词关键字规则等项目级默认值
     ├── templates.yaml               # 输入模板文件名
@@ -43,7 +44,6 @@
     - 在导出的 xlsx 中新增表格列：待办事项1、待办事项2...
     - 填写待办内容例如：UCL、LCL受小数保留位数影响 @jhh 补充prd  @hml 修改用例
     - 没有待办则留空即可
-    - 列名里任意位置有空格也能识别（如 ` 待办 事项 1 `），但建议保持 `待办事项1` 规范写法
     |
     ▼
 ③ 将整理后的 xlsx 放到 inputs/requirement_data/
@@ -170,10 +170,15 @@ python main.py --mode email --data-file-keyword SP8 --no-clear-output
 配置文件是默认值的单一来源。脚本启动时会读取 YAML；配置缺失或格式错误会直接失败，避免 Python 中旧默认值与 YAML 不一致。
 
 ## 环境
-推荐使用项目虚拟环境：
+依赖（`pandas` / `openpyxl` / `python-docx` / `pyyaml`）见项目根目录的 `requirements.txt`。推荐在**项目根目录**创建虚拟环境后安装：
 
 ```bash
+# 在项目根目录（AutoCaseReview/）下执行
 python -m venv .venv
+
+# macOS / Linux
+.venv/bin/python -m pip install -r requirements.txt
+# Windows
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
