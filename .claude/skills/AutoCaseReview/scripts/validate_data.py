@@ -14,6 +14,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 from data_loader import (  # noqa: E402
     CANONICAL_COLUMNS,
     REQUIREMENT_DATA_DIR,
+    TODO_LOOSE_RE,
     get_todo_columns,
     list_iterations,
     load_all_requirements,
@@ -112,15 +113,15 @@ def validate_requirements(
 
     todo_columns = get_todo_columns(df)
     if not todo_columns:
-        warnings.append("未检测到 `代办事项N@责任人` 列。")
+        warnings.append("未检测到 `待办事项N` 列。")
 
     malformed_todos = [
         col for col in df.columns
-        if str(col).startswith("代办事项") and col not in todo_columns
+        if TODO_LOOSE_RE.search(str(col)) and col not in todo_columns
     ]
     if malformed_todos:
         warnings.append(
-            "以下代办列名不会被识别，请使用 `代办事项N@责任人` 格式："
+            "以下待办列名不会被识别，请使用 `待办事项N` 格式（N 为数字，如 待办事项1）："
             + ", ".join(map(str, malformed_todos))
         )
 

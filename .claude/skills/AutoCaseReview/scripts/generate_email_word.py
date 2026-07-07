@@ -14,9 +14,9 @@ Layout mirrors ``inputs/templates/email.png``:
   │ ...  │ ...                              │ ...  │ 通过     │      │
   └──────┴──────────────────────────────────┴──────┴──────────┴──────┘
 
-  3.评审记录/代办事项
+  3.评审记录/待办事项
   #需求ID 需求标题
-  • 代办事项原文（含 @责任人）
+  • 待办事项原文（含 @责任人）
   ...
 """
 
@@ -156,7 +156,7 @@ def _build_intro_line(template: str, product: str, iteration: str) -> str:
 
 
 def _build_todo_section(doc, df) -> int:
-    """Section 3: ``评审记录/代办事项`` — group todos under each requirement."""
+    """Section 3: ``评审记录/待办事项`` — group todos under each requirement."""
     emitted = 0
     for _, row in df.iterrows():
         todos = expand_todos(row.to_frame().T)

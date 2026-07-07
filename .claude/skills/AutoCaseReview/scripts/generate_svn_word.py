@@ -1,4 +1,4 @@
-"""Generate the SVN Word deliverable (LC-SOP-RC-003-M01).
+"""Generate the SVN Word deliverable (LC-SOP-RC-003-R01).
 
 Strategy: open the template, fill cells inside the only table (``会议纪要``),
 dynamically extend the ``改进或遗留工作项`` section with one row per todo
@@ -153,7 +153,7 @@ def _build_meeting_content(df) -> str:
     """Fill ``会议内容`` with all todo text from requirement_data.
 
     SVN Word is generated per requirement, so this writes every
-    ``代办事项N@责任人`` value from the current requirement.  The source text is
+    ``待办事项N`` value from the current requirement.  The source text is
     preserved, including @mentions.
     """
     content_cfg = load_content_rules().get("meeting", {}).get("content", {})
@@ -305,7 +305,7 @@ def generate(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate SVN Word (LC-SOP-RC-003-M01).")
+    parser = argparse.ArgumentParser(description="Generate SVN Word (LC-SOP-RC-003-R01).")
     parser.add_argument("--iteration", help="Filter on 所属迭代 before generating.")
     parser.add_argument("--product", default=get_default_product())
     parser.add_argument("--version", default="A1")

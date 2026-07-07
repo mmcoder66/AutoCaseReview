@@ -64,28 +64,73 @@ COLUMN_ALIASES = {
 }
 
 # Columns that hold to-do items (each contains free text with @mentions).
-# The input can contain any number of columns such as 代办事项1@责任人,
-# 代办事项2@责任人, ...; discover them dynamically instead of hard-coding a max.
-TODO_COLUMN_RE = re.compile(r"^代办事项(\d+)@责任人$")
+# The input can contain any number of columns such as 待办事项1, 待办事项2, ...;
+# discover them dynamically instead of hard-coding a max.
+#
+# Spaces are tolerated ANYWHERE in the header (leading, between any two
+# characters, trailing) because Ones exports / manual editing sometimes insert
+# stray spaces, e.g. " 待办 事项 1 " must still be recognised.
+TODO_COLUMN_RE = re.compile(r"^\s*待\s*办\s*事\s*项\s*(\d+)\s*$")
+
+# Loose pattern used only to flag columns that LOOK like todo columns but do
+# not strictly match ``TODO_COLUMN_RE`` (e.g. "待办事项1@责任人", "待办事项X",
+# or the common typo "代办事项1").  It accepts BOTH 待/代 so that a typo'd
+# header is reported via the validator instead of being silently dropped.
+TODO_LOOSE_RE = re.compile(r"[代待]\s*办\s*事\s*项")
 
 # Matches substrings like "@黄美玲" or "@Zhang San".
-# Names: 2-4 Chinese chars, or 1-30 ASCII letters/dots/hyphens/apostrophes
-# (we intentionally do NOT allow whitespace, so the match stops as soon as a
-# space follows the name, e.g. "@黄美玲 修改用例" yields "黄美玲").
+#
+# Chinese names: 2-4 chars, NON-GREEDY, so that a name directly followed by
+# Chinese action text is not over-matched. For example "@黄美玲改用例" must yield
+# "黄美玲" (not "黄美玲改"). The name is required to be followed by a terminator:
+#   * the next "@" (e.g. "@荆慧慧@黄美玲")
+#   * whitespace / punctuation / end-of-string
+#   * ASCII letters/digits (e.g. "@黄美玲prd")
+#   * a common action verb: 修改 / 补充 / 改用例 / 确认 / 跟进 / 验证 / ...
+# Tolerates ANY amount of whitespace anywhere AROUND the "@name" (before the @,
+# between the @ and name there must be NO space — "@ 黄美玲" is intentionally not
+# matched because the @ would no longer bind to the name).
+#
+# ASCII names: 1-30 letters/dots/hyphens/apostrophes; they naturally stop at the
+# first non-ASCII char (so "@hml改用例" yields "hml").
+_CN_ACTION_TAIL = (
+    "修改|补充|改[为用例Pp]|确认|跟进|验证|处理|排查|联调|对接|评审|测试|回归|实装"
+)
 MENTION_RE = re.compile(
-    r"@([\u4e00-\u9fa5]{2,4}|[A-Za-z][A-Za-z.\-']{0,29})"
+    r"@("
+    r"[\u4e00-\u9fa5]{2,4}?(?=@|\s|\W|$|[A-Za-z0-9]|" + _CN_ACTION_TAIL + r")"
+    r"|[A-Za-z][A-Za-z.\-']{0,29}"
+    r")"
 )
 
 
 # ---------------------------------------------------------------------------
 # Public helpers
 # ---------------------------------------------------------------------------
+def _strip_invisible(text: str) -> str:
+    """Remove leading/trailing invisible characters from a column header.
+
+    Ones exports occasionally append hundreds of zero-width spaces (U+200B)
+    to header cells, which breaks strict regex matching (e.g. the trailing
+    ``$`` in :data:`TODO_COLUMN_RE`).  Python's default ``str.strip()`` does
+    NOT remove these because they aren't classified as whitespace by the
+    Unicode standard — so we strip them explicitly here.
+
+    Covers: zero-width spaces (U+200B–U+200F), BOM (U+FEFF), NBSP (U+00A0),
+    line/paragraph separators (U+2028/U+2029), plus ASCII whitespace.
+    """
+    invisibles = "\u200b\u200c\u200d\u200e\u200f\ufeff\u00a0\u2028\u2029"
+    return str(text).strip(invisibles + " \t\r\n\v\f")
+
+
 def _normalise_columns(df: pd.DataFrame) -> pd.DataFrame:
-    rename_map = {}
-    for col in df.columns:
-        key = str(col).strip()
-        if key in COLUMN_ALIASES:
-            rename_map[col] = COLUMN_ALIASES[key]
+    # Step 1: clean every column header of invisible characters so downstream
+    # regex matching (alias map / TODO_COLUMN_RE) works reliably.
+    cleaned_cols = {col: _strip_invisible(col) for col in df.columns}
+    df = df.rename(columns=cleaned_cols)
+
+    # Step 2: map English/alias names to canonical Chinese names.
+    rename_map = {col: COLUMN_ALIASES[col] for col in df.columns if col in COLUMN_ALIASES}
     df = df.rename(columns=rename_map)
 
     missing = [c for c in CANONICAL_COLUMNS if c not in df.columns]
@@ -95,11 +140,27 @@ def _normalise_columns(df: pd.DataFrame) -> pd.DataFrame:
         for col in missing:
             df[col] = ""
     todo_columns = get_todo_columns(df)
-    return df[CANONICAL_COLUMNS + todo_columns]
+    # Keep columns that LOOK like todo columns but do NOT strictly match
+    # (e.g. "待办事项1@责任人", "待办事项X") so the validator can warn about
+    # them. Downstream code only ever reads via get_todo_columns (strict), so
+    # these inert columns are never used as real todos.
+    malformed_todos = [
+        str(c) for c in df.columns
+        if TODO_LOOSE_RE.search(str(c)) and str(c) not in todo_columns
+        and str(c) not in CANONICAL_COLUMNS
+    ]
+    # De-duplicate while preserving order (df may have duplicate header names).
+    seen: set[str] = set()
+    malformed_todos = [c for c in malformed_todos if not (c in seen or seen.add(c))]
+    return df[CANONICAL_COLUMNS + todo_columns + malformed_todos]
 
 
 def get_todo_columns(df: pd.DataFrame) -> list[str]:
-    """Return all ``代办事项N@责任人`` columns sorted by N, then original order."""
+    """Return all ``待办事项N`` columns sorted by N, then original order.
+
+    Headers may contain arbitrary spaces anywhere (leading, between chars,
+    trailing); they are matched leniently by :data:`TODO_COLUMN_RE`.
+    """
     indexed: list[tuple[int, int, str]] = []
     for position, col in enumerate(df.columns):
         name = str(col).strip()
@@ -262,7 +323,7 @@ def strip_mentions(text: str) -> str:
 
 
 def expand_todos(df: pd.DataFrame) -> list[dict]:
-    """Flatten ``代办事项N@责任人`` cells into one record per todo item.
+    """Flatten ``待办事项N`` cells into one record per todo item.
 
     Each returned dict has: ``seq``, ``description`` (original text), ``owners``
     (list of @-mentions), ``plan_date``, ``req_id``, ``req_title``,

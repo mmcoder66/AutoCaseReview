@@ -15,7 +15,7 @@
 svn_excel: "LC-SOP-RC-007-R02_测试用例评审_{product}_{title}_{version}.xlsx"
 
 # SVN Word（每条需求各一份）
-svn_word: "LC-SOP-RC-003-M01_会议纪要_{product}_测试用例评审_{title}_{version}.docx"
+svn_word: "LC-SOP-RC-003-R01_会议纪要_{product}_测试用例评审_{title}_{version}.docx"
 
 # 邮件 Word（每个迭代一份，不需要版本号）
 email_word: "{product}_{iteration}_测试用例评审_邮件.docx"

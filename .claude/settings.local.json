@@ -18,7 +18,9 @@
       "Bash(cd /Users/hml/Documents/Study/AI/AutoCaseReview/.claude/skills/AutoCaseReview/scripts rm -f ../outputs/*.xlsx ../outputs/*.docx python3 main.py --mode svn --version \"v1.0.1\" --recorder \"黄美玲\" --initiator \"荆慧慧\" --host \"荆慧慧\" --reviewer \"张三\" --review-date \"2026-06-25\")",
       "Bash(cd:*)",
       "Bash(head -1 echo \"\" echo \"=== 模板里的内部文件 ===\" python3 -c \"\nimport zipfile\nwith zipfile.ZipFile\\(''''inputs/LC-SOP-RC-007-R02_测试用例评审_iBatchInsight_需求名称_版本号.xlsx''''\\) as z:\n    for n in z.namelist\\(\\): print\\('''' '''', n\\)\n\")",
-      "Bash(head -30 echo \"\" echo \"=== 生成文件里的内部文件 ===\" python3 -c \"\nimport zipfile, glob\nf = sorted\\(glob.glob\\(''''outputs/测试用例评审/*.xlsx''''\\)\\)[0]\nprint\\(f''''文件: {f}''''\\)\nwith zipfile.ZipFile\\(f\\) as z:\n    for n in z.namelist\\(\\): print\\('''' '''', n\\)\n\")"
+      "Bash(head -30 echo \"\" echo \"=== 生成文件里的内部文件 ===\" python3 -c \"\nimport zipfile, glob\nf = sorted\\(glob.glob\\(''''outputs/测试用例评审/*.xlsx''''\\)\\)[0]\nprint\\(f''''文件: {f}''''\\)\nwith zipfile.ZipFile\\(f\\) as z:\n    for n in z.namelist\\(\\): print\\('''' '''', n\\)\n\")",
+      "Bash(SAMPLE=\"/Users/hml/Documents/Study/AI/AutoCaseReview/.claude/skills/AutoCaseReview/outputs/测试用例评审/LC-SOP-RC-007-R02_测试用例评审_iBatchInsight_【工艺能力汇总】支持导出PDF文件_v1.0.1.xlsx\")",
+      "Skill(AutoCaseReview)"
     ]
   }
 }
