@@ -349,11 +349,17 @@ _FILENAME_ILLEGAL_RE = re.compile(r'[\\/:*?"<>|\r\n\t]+')
 def sanitize_filename(text: str, max_length: int = 60) -> str:
     """Strip characters that are unsafe in file names on Windows/macOS/Linux.
 
-    Chinese punctuation such as ``【】（）`` is preserved.  The result is
-    truncated to *max_length* characters.
+    * Filename-illegal chars (``\\ / : * ? " < > |`` and line breaks) are
+      replaced with ``_``.
+    * Whitespace is removed **entirely** (not turned into ``_``), so a title
+      like ``"- 1业务"`` becomes ``"-1业务"`` rather than ``"-_1业务"``.
+    * Consecutive underscores are collapsed, then leading/trailing
+      ``_ . `` are trimmed.  Chinese punctuation such as ``【】（）`` is
+      preserved.  The result is truncated to *max_length* characters.
     """
-    safe = _FILENAME_ILLEGAL_RE.sub("_", str(text or "")).strip()
-    safe = re.sub(r"[\s_]+", "_", safe).strip("_. ")
+    safe = _FILENAME_ILLEGAL_RE.sub("_", str(text or ""))
+    safe = re.sub(r"\s+", "", safe)              # drop whitespace entirely
+    safe = re.sub(r"_+", "_", safe).strip("_. ")  # collapse _ runs, trim edges
     return safe[:max_length] or "untitled"
 
 
