@@ -8,8 +8,5 @@ __pycache__/
 # Office temporary lock files
 ~$*
 
-# AutoCaseReview generated documents
-.claude/skills/AutoCaseReview/outputs/
-
 # Local IDE metadata
 .idea/
