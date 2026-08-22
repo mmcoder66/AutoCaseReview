@@ -248,6 +248,11 @@ def load_all_requirements(
 
     frames = [load_requirement_file(p) for p in files]
     combined = pd.concat(frames, ignore_index=True)
+    # pd.concat re-introduces NaN for columns that only exist in some files
+    # (e.g. 待办事项3 present in SP7/SP8 but missing in SP9-SP11).  Left as
+    # NaN, str(NaN) == "nan" passes the non-empty check downstream and shows
+    # up as a bogus todo row in generated documents.
+    combined = combined.fillna("")
 
     if iteration:
         combined = combined[combined["所属迭代"].str.strip() == iteration.strip()].reset_index(drop=True)
